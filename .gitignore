@@ -1,0 +1,19 @@
+# Runtime artifacts
+.env
+.dvwa-cookies.txt
+evidence/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+*~
+
+# Archives
+*.tar.gz
+*.zip

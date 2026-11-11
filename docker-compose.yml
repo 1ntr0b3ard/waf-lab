@@ -1,0 +1,100 @@
+services:
+  # ------------------------------------------------------------------
+  # Deliberately vulnerable app (baseline, NO WAF)
+  #   http://127.0.0.1:8080  -> DVWA directly
+  # ------------------------------------------------------------------
+  dvwa:
+    image: vulnerables/web-dvwa:latest
+    container_name: waflab-dvwa
+    restart: unless-stopped
+    ports:
+      - "${LAB_BIND:-127.0.0.1}:${DVWA_PORT:-8080}:80"
+
+  # ------------------------------------------------------------------
+  # DVWA behind OWASP ModSecurity CRS  (WAF = nginx + ModSecurity v3)
+  #   http://127.0.0.1:8081  -> DVWA via WAF
+  # ------------------------------------------------------------------
+  waf:
+    image: owasp/modsecurity-crs:nginx
+    container_name: waflab-waf
+    restart: unless-stopped
+    depends_on:
+      - dvwa
+    environment:
+      BACKEND: "http://dvwa:80"
+      PORT: "8080"
+      SERVER_NAME: "waflab.local"
+      PARANOIA: "1"
+      # Keep default anomaly thresholds (inbound block at 5)
+      ANOMALY_INBOUND: "5"
+    ports:
+      - "${LAB_BIND:-127.0.0.1}:${WAF_PORT:-8081}:8080"
+
+  # ------------------------------------------------------------------
+  # Request echo service (baseline, NO WAF)
+  #   http://127.0.0.1:8082  -> echoes method, headers, body, query
+  # ------------------------------------------------------------------
+  echo:
+    image: mendhak/http-https-echo:latest
+    container_name: waflab-echo
+    restart: unless-stopped
+    environment:
+      HTTP_PORT: "8080"
+      HTTPS_PORT: "8443"
+    ports:
+      - "${LAB_BIND:-127.0.0.1}:${ECHO_PORT:-8082}:8080"
+
+  # ------------------------------------------------------------------
+  # Echo service behind the same CRS WAF
+  #   http://127.0.0.1:8083  -> practice header / method / HPP tricks
+  # ------------------------------------------------------------------
+  waf-echo:
+    image: owasp/modsecurity-crs:nginx
+    container_name: waflab-waf-echo
+    restart: unless-stopped
+    depends_on:
+      - echo
+    environment:
+      BACKEND: "http://echo:8080"
+      PORT: "8080"
+      SERVER_NAME: "waflab-echo.local"
+      PARANOIA: "1"
+      ANOMALY_INBOUND: "5"
+    ports:
+      - "${LAB_BIND:-127.0.0.1}:${WAF_ECHO_PORT:-8083}:8080"
+
+  # ------------------------------------------------------------------
+  # DELIBERATELY WEAK WAF (naive literal matcher) -> para may successful
+  # bypass kang ma-practice. See weak_waf.py for the intentional flaws.
+  #   http://127.0.0.1:8084  -> DVWA behind weak WAF
+  #   http://127.0.0.1:8085  -> echo behind weak WAF
+  # ------------------------------------------------------------------
+  weak-waf:
+    image: python:3.12-alpine
+    container_name: waflab-weak-waf
+    restart: unless-stopped
+    depends_on:
+      - dvwa
+    environment:
+      BACKEND: "dvwa:80"
+      LISTEN_PORT: "8080"
+    volumes:
+      - ./weak_waf.py:/app/weak_waf.py:ro
+    command: ["python", "/app/weak_waf.py"]
+    ports:
+      - "${LAB_BIND:-127.0.0.1}:${WEAK_PORT:-8084}:8080"
+
+  weak-waf-echo:
+    image: python:3.12-alpine
+    container_name: waflab-weak-waf-echo
+    restart: unless-stopped
+    depends_on:
+      - echo
+    environment:
+      BACKEND: "echo:8080"
+      LISTEN_PORT: "8080"
+    volumes:
+      - ./weak_waf.py:/app/weak_waf.py:ro
+    command: ["python", "/app/weak_waf.py"]
+    ports:
+      - "${LAB_BIND:-127.0.0.1}:${WEAK_ECHO_PORT:-8085}:8080"
